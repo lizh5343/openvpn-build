@@ -1,6 +1,7 @@
 @echo off
 rem OpenVPN Project MSVC Compile Build
 rem Copyright (C) 2008-2012 Alon Bar-Lev <alon.barlev@gmail.com>
+rem Copyright (C) 2019 Lev Stipakov <lstipakov@gmail.com>
 rem
 rem This program is free software: you can redistribute it and/or modify
 rem it under the terms of the GNU General Public License as published by
@@ -17,37 +18,56 @@ rem along with this program.  If not, see <http://www.gnu.org/licenses/>.
 rem
 
 rem Required software:
-rem - visual studio 2008
+rem - Visual Studio 2019
 rem - perl
 rem
-rem NOTE:
-rem To build only dependencies set DO_ONLY_DEPS=true before building
-rem Useful for own development.
-rem
+rem To build only openvpn, run
+rem    set MODE=OPENVPN&& build.bat
+rem To build only dependencies, run
+rem    set MODE=DEPS&& build.bat
+rem To build for 32bit architecture, run
+rem    set ARCH=32S&& build.bat
 
 setlocal ENABLEDELAYEDEXPANSION
 
 cd /d %0\..
 SET ROOT=%CD%
+SET OPENVPN_BUILD_OPENVPN=openvpn-build-openvpn
 
 call build-env.bat
 if exist build-env-local.bat call build-env-local.bat
 
+echo Building for %ARCH%bit architecture
+
 if exist "%VCHOME%\vcvarsall.bat" (
 	call "%VCHOME%\vcvarsall.bat"
-) else if exist "%VCHOME%\bin\vcvars32.bat" (
-	call "%VCHOME%\bin\vcvars32.bat"
-	goto have_vars
+) else if exist "%VCHOME%\bin\vcvars%ARCH%.bat" (
+	call "%VCHOME%\bin\vcvars%ARCH%.bat"
+) else if exist "%VCHOME%\Auxiliary\Build\vcvars%ARCH%.bat" (
+	call "%VCHOME%\Auxiliary\Build\vcvars%ARCH%.bat"
 ) else (
 	echo Cannot detect visual studio environment
 	goto error
 )
 
-perl -e "exit 0" > nul 2>&1
+if "%MODE%" == "OPENVPN" goto build_openvpn
+
+nasm.exe -h > nul 2>&1
 if not errorlevel 1 goto cont1
+echo nasm.exe not found in PATH
+if not exist "%NASM_DIR%" (
+	echo "Could't find %NASM_DIR%/nasm.exe, please install NASM (https://www.nasm.us)"
+	goto error
+)
+echo Adding %NASM_DIR% to PATH
+set PATH=%NASM_DIR%;%PATH%
+:cont1
+
+perl -e "exit 0" > nul 2>&1
+if not errorlevel 1 goto cont2
 echo perl is required
 goto error
-:cont1
+:cont2
 
 echo Cleanup
 
@@ -89,28 +109,32 @@ echo Extract
 
 for %%f in (sources\*.gz sources\*.bz2) do "%P7Z%" x -odownload.tmp "%%f"
 if errorlevel 1 goto error
-for %%f in (download.tmp\*) do "%P7Z%" x -obuild.tmp "%%f"
+for %%f in (download.tmp\*) do "%P7Z%" x -obuild.tmp "%%f" -aou
 if errorlevel 1 goto error
-for %%f in (sources\*.zip) do "%P7Z%" x -obuild.tmp "%%f"
+for %%f in (sources\*.zip) do "%P7Z%" x -obuild.tmp "%%f" -aou
 if errorlevel 1 goto error
 
 echo Build OpenSSL
 
 cd build.tmp\openssl*
-perl Configure VC-WIN32 --prefix="%TARGET%"
+if %ARCH%==32 ( SET CONF=VC-WIN32 ) else ( SET CONF=VC-WIN64A )
+perl Configure %CONF% --prefix="%TARGET%" --openssldir="%TARGET%"\ssl
 if errorlevel 1 goto error
-call ms\do_ms
+nmake install
 if errorlevel 1 goto error
-nmake -f ms\ntdll.mak
-if errorlevel 1 goto error
-nmake -f ms\ntdll.mak install
-if errorlevel 1 goto error
+
+if not exist "%TARGET%\libeay32.lib" (
+	rem workaround for pkcs11-helper VS build has pre-1.1.0 hardcoded library names
+	copy %TARGET%\lib\libcrypto.lib %TARGET%\lib\libeay32.lib
+	copy %TARGET%\lib\libssl.lib %TARGET%\lib\ssleay32.lib
+)
+
 cd %ROOT%
 
 echo Build LZO
 
 cd build.tmp\lzo*
-call B\win32\vc_dll.bat
+call B\win%ARCH%\vc_dll.bat
 rem if errorlevel 1 goto error - returns 1!!
 xcopy include\lzo "%TARGET%\include\lzo" /e /i /y
 if errorlevel 1 goto error
@@ -140,23 +164,29 @@ cd %ROOT%
 
 echo TAP
 
-copy build.tmp\tap-windows-%TAP_VERSION%\include\* "%TARGET%\include"
+copy build.tmp\tap-windows6-%TAP_VERSION%\src\tap-windows.h "%TARGET%\include"
 if errorlevel 1 goto error
 
-if "%DO_ONLY_DEPS%"=="" (
-	echo Build OpenVPN
+if "%MODE%" == "DEPS" goto end
 
-	cd build.tmp\openvpn*
-	if exist "%ROOT%\config\config-msvc-local.h" copy "%ROOT%\config\config-msvc-local.h" .
-	set OPENVPN_DEPROOT=%TARGET%
-	call msvc-build.bat
-	if errorlevel 1 goto error
-	copy "Win32-Output\%RELEASE%"\*.exe "%TARGET%\bin"
-	if errorlevel 1 goto error
-	copy include\openvpn-*.h "%TARGET%\include"
-	if errorlevel 1 goto error
-	cd %ROOT%
-)
+:build_openvpn
+
+echo Build OpenVPN
+
+rmdir /q /s ..\..\%OPENVPN_BUILD_OPENVPN% > nul 2>&1
+mkdir ..\..\%OPENVPN_BUILD_OPENVPN% > nul 2>&1
+cd build.tmp\openvpn*
+xcopy * ..\..\..\..\%OPENVPN_BUILD_OPENVPN% /E
+cd ..\..\..\..\%OPENVPN_BUILD_OPENVPN%
+
+if %ARCH%==32 ( SET PLAT=Win32 ) else ( SET PLAT=x64 )
+msbuild openvpn.sln /p:Platform=%PLAT% /p:Configuration=%RELEASE%
+if errorlevel 1 goto error
+copy x64-Output\%RELEASE%\*.exe "%TARGET%\bin"
+if errorlevel 1 goto error
+copy include\openvpn-*.h "%TARGET%\include"
+if errorlevel 1 goto error
+cd %ROOT%
 
 echo SUCCESS
 set rc=0
@@ -166,5 +196,5 @@ echo FAILED!
 set rc=1
 :end
 cd %ROOT%
-endlocal
+endlocal && set rc=%rc%
 exit /b %rc%

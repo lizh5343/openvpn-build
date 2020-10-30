@@ -1,5 +1,5 @@
 sudo: required
-dist: trusty
+dist: bionic
 
 os: linux
 language: cpp
@@ -7,24 +7,24 @@ compiler: gcc
 
 addons:
   apt:
-    packages: [ man2html, dos2unix, nsis ]
+    packages: [ man2html, dos2unix, nsis, gcc-mingw-w64, python-docutils ]
 
 env:
   global:
     - CBUILD=x86_64-pc-linux-gnu
-    - IMAGEROOT=${HOME}/image
+    - SCRIPT=generic/build
 
 matrix:
   fast_finish: true
   include:
     - compiler: ": Win32"
-      env: CHOST=i686-w64-mingw32 SCRIPT=generic/build
+      env: CHOST=i686-w64-mingw32
     - compiler: ": Win64"
-      env: CHOST=x86_64-w64-mingw32 SCRIPT=generic/build
+      env: CHOST=x86_64-w64-mingw32
     - compiler: ": Win32 + static"
-      env: DO_REALLY_STATIC=1 CHOST=i686-w64-mingw32 SCRIPT=generic/build
+      env: DO_REALLY_STATIC=1 CHOST=i686-w64-mingw32
     - compiler: ": Win64 + static"
-      env: DO_REALLY_STATIC=1 CHOST=x86_64-w64-mingw32 SCRIPT=generic/build
+      env: DO_REALLY_STATIC=1 CHOST=x86_64-w64-mingw32
     - compiler: ": Win32 + depcache"
       env: CHOST=i686-w64-mingw32
       script:
@@ -41,11 +41,6 @@ matrix:
       env: SCRIPT=windows-nsis/build-complete
   exclude:
     - compiler: gcc
-
-install:
-    - sudo apt-add-repository "deb http://archive.ubuntu.com/ubuntu xenial main universe"
-    - sudo apt-get update
-    - sudo apt-get -y install dpkg gcc-mingw-w64
 
 before_script:
     - unset CC; unset CXX

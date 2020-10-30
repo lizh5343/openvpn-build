@@ -5,17 +5,27 @@ About
     This subdirectory contains scripts for building OpenVPN
     and all it's dependencies using Microsoft Visual C.
 
-    Note that this buildsystem is not actively maintained
-    anymore, and people are strongly encouraged to use the
-    cross-compile (mingw_w64) buildsystem instead. For
-    details look here:
-
-    ../generic/README
-    ../windows-nsis/README
+    You need to install:
+      - Visual Studio 2019 (Build Tools for VS will also work)
+      - Perl (Strawberry or ActiveState, required for building OpenSSL)
+      - NASM (required for building OpenSSL)
 
 Usage
 
-    If you're sure you _need_ to build using MSVC, please
-    refer to instructions in the OpenVPN wiki:
+    Clone openvpn-build repo:
 
-    <https://community.openvpn.net/openvpn>
+      > git clone git@github.com:OpenVPN/openvpn-build.git
+
+    Clone openvpn repo:
+
+      > git clone git@github.com:OpenVPN/openvpn.git
+
+    Build OpenVPN with dependencies:
+
+      > openvpn-build\msvc\build.bat
+
+    Development environment is ready. Open solution file in Visual Studio (select "x64" in "Solution Platforms") :
+
+      > openvpn\openvpn.sln
+
+    and start coding!
